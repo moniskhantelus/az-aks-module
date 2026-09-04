@@ -7,14 +7,28 @@ tenant_id       = "00000000-0000-0000-0000-000000000000"
 # ==============================================================================
 # General
 # ==============================================================================
-cluster_name       = "aks-platform-dev"
+naming = {
+  platform     = "kaas"
+  maintain_org = "cdp"
+  environment  = "dev"
+  region_code  = "va"
+}
 kubernetes_version = null
 cluster_profile    = "stateless"
 compliance_profile = "standard"
 resource_group = {
   create   = true
-  name     = "rg-platform-dev"
+  name     = "kaas-cdp-dev-va-rg"
   location = "eastus2"
+}
+
+# Omit this block (or leave create = true) to preserve the original behavior and
+# let the module create both identities. To reuse existing identities, set
+# create = false and provide both complete Azure resource IDs.
+managed_identities = {
+  create                    = true
+  control_plane_identity_id = null
+  kubelet_identity_id       = null
 }
 
 # ==============================================================================
@@ -162,13 +176,9 @@ diagnostic_log_categories = ["kube-apiserver", "kube-audit", "kube-audit-admin",
 # Governance / ESAT tags
 # ==============================================================================
 tags = {
-
-  ApplicationId      = "PLATFORM-001"
-  CostCenter         = "LAB-001"
-  Environment        = "dev"
-  Owner              = "platform-engineering"
-  ManagedBy          = "Terraform"
-  EsatId             = "ESAT-REPLACE-ME"
-  Platform           = "AKS"
-  DataClassification = "internal"
+  ECS_CSF_TAG    = "{\"SIS_RESP_ORG\":\"ENT-STRATA-KAAS-EIC-AZ\",\"SIS_CONTACT_BEMS_ID\":\"REPLACE\",\"SIS_ASSET_OWNER_BEMS_ID\":\"REPLACE\",\"SIS_ENVIRONMENT_ID\":\"DEVELOPMENT\",\"SIS_ASE_ID\":\"strata-k8s-azure\",\"LAPIC_ADMIN_ACCOUNT\":\"replace@boeing.com\"}"
+  ECS_HPOO_TAG   = "{\"HPOO_CAGASSIGNMENTGROUP\":\"ENT-STRATA-KAAS-EIC-AZ\",\"HPOO_REQUESTORBEMSID\":\"REPLACE\",\"HPOO_SISRESPONSIBLEMANAGER\":\"REPLACE\",\"HPOO_SISVENDORSUPPORT\":\"BOEING\"}"
+  KAAS_TAG       = "{\"mo\":\"cdp\",\"esats_id\":\"3678542\",\"namespace\":\"cdp-platform\",\"env\":\"dev\",\"finops_uuid\":\"REPLACE\",\"classification\":\"internal\",\"deploy_type\":\"terraform\",\"tier\":\"tier-3\",\"sla\":\"none\"}"
+  KAAS_EXT_TAG   = "{\"dl\":\"replace@boeing.com\",\"dr_enabled\":\"false\",\"backup_policy\":\"none\",\"data_residency\":\"us-gov\"}"
+  KAAS_INFRA_TAG = "{\"persistence\":\"stateless\",\"storage_type\":\"none\",\"ingress\":\"internal\",\"network_policy\":\"enabled\",\"scaling\":\"keda\",\"secrets_provider\":\"csi-kv\",\"mesh_enabled\":\"false\"}"
 }

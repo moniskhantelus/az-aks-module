@@ -1,9 +1,10 @@
 resource "azurerm_monitor_diagnostic_setting" "this" {
-  count = local.log_analytics_workspace_id == null ? 0 : 1
+  count = local.log_analytics_workspace_id == null && local.audit_archive_storage_id == null ? 0 : 1
 
-  name                           = "diag-${var.name}"
+  name                           = "diag-${local.cluster_name}"
   target_resource_id             = azurerm_kubernetes_cluster.this.id
   log_analytics_workspace_id     = local.log_analytics_workspace_id
+  storage_account_id             = local.audit_archive_storage_id
   log_analytics_destination_type = "Dedicated"
 
   dynamic "enabled_log" {

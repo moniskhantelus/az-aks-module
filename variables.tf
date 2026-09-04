@@ -1,10 +1,20 @@
-variable "name" {
-  description = "AKS cluster name."
-  type        = string
+variable "naming" {
+  description = "KaaS naming segments. Names are derived as <platform>-<maintain-org>-<env>-<region>-aks and corresponding resource suffixes."
+  type = object({
+    platform     = string
+    maintain_org = string
+    environment  = string
+    region_code  = string
+  })
 
   validation {
-    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_-]{1,61}[A-Za-z0-9]$", var.name))
-    error_message = "name must contain 3-63 valid AKS name characters."
+    condition = (
+      var.naming.platform == "kaas" &&
+      contains(["iao", "hr", "cs", "fs", "cdp", "ops", "fin"], var.naming.maintain_org) &&
+      contains(["sandbox", "dev", "stage", "prod", "dr"], var.naming.environment) &&
+      contains(["va", "az"], var.naming.region_code)
+    )
+    error_message = "naming must use platform kaas, an approved maintaining org/environment, and region code va or az."
   }
 }
 
@@ -26,6 +36,11 @@ variable "resource_group" {
     error_message = "resource_group.location must be provided when resource_group.create is true."
   }
 }
+
+# variable "location" {
+#   description = "Azure region in which regional AKS resources are deployed."
+#   type        = string
+# }
 
 variable "tenant_id" {
   description = "Microsoft Entra tenant ID."
@@ -70,6 +85,20 @@ variable "admin_group_object_ids" {
   validation {
     condition     = length(var.admin_group_object_ids) > 0
     error_message = "At least one administrator group object ID is required."
+  }
+}
+
+variable "mandatory_admin_group_object_ids" {
+  description = "Platform-owned Microsoft Entra administrator groups that must be retained in production."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for id in var.mandatory_admin_group_object_ids :
+      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", id))
+    ])
+    error_message = "mandatory_admin_group_object_ids must contain valid Microsoft Entra object IDs."
   }
 }
 
@@ -158,13 +187,56 @@ variable "disruption_profile" {
 }
 
 variable "private_cluster" {
-  description = "Private API settings."
+  description = "Private API and API Server VNet Integration settings."
+
   type = object({
-    enabled                   = bool
-    private_dns_zone_id       = string
-    public_fqdn_enabled       = bool
-    api_server_authorized_ips = list(string)
+    enabled                             = bool
+    private_dns_zone_id                 = string
+    public_fqdn_enabled                 = bool
+    api_server_authorized_ips           = list(string)
+    api_server_vnet_integration_enabled = optional(bool, false)
+    api_server_subnet_id                = optional(string)
   })
+
+  validation {
+    condition = (
+      !var.private_cluster.api_server_vnet_integration_enabled ||
+      try(trimspace(var.private_cluster.api_server_subnet_id), "") != ""
+    )
+
+    error_message = "API Server VNet Integration requires private_cluster.api_server_subnet_id."
+  }
+}
+
+variable "kms_encryption" {
+  description = "AKS etcd KMS encryption configuration."
+
+  type = object({
+    enabled                  = bool
+    key_vault_key_id         = optional(string)
+    key_vault_resource_id    = optional(string)
+    key_vault_network_access = optional(string, "Private")
+  })
+
+  validation {
+    condition = (
+      !var.kms_encryption.enabled ||
+      (
+        var.kms_encryption.key_vault_key_id != null &&
+        var.kms_encryption.key_vault_resource_id != null
+      )
+    )
+
+    error_message = "Enabled KMS encryption requires key_vault_key_id and key_vault_resource_id."
+  }
+
+  validation {
+    condition = (
+      var.kms_encryption.key_vault_network_access == "Private"
+    )
+
+    error_message = "KMS Key Vault network access must be Private."
+  }
 }
 
 variable "network" {
@@ -175,7 +247,6 @@ variable "network" {
     dns_service_ip    = string
     outbound_type     = string
     load_balancer_sku = string
-    network_mode      = string
   })
 
   validation {
@@ -476,9 +547,10 @@ variable "storage_profile" {
 variable "integrations" {
   description = "Existing resources integrated by resource ID."
   type = object({
-    acr_id                     = string
-    log_analytics_workspace_id = string
-    defender_log_analytics_id  = string
+    acr_id                           = optional(string)
+    log_analytics_workspace_id       = optional(string)
+    defender_log_analytics_id        = optional(string)
+    audit_archive_storage_account_id = optional(string)
   })
 
   validation {
@@ -545,14 +617,65 @@ variable "diagnostic_log_categories" {
 }
 
 variable "tags" {
-  description = "Enterprise tags."
+  description = "Playbook governance tags. Values are compact JSON strings and each must be no more than 256 characters."
   type        = map(string)
 
   validation {
     condition = alltrue([
-      for key in ["ApplicationId", "CostCenter", "Environment", "Owner", "ManagedBy", "EsatId", "Platform", "DataClassification"] :
+      for key in ["ECS_CSF_TAG", "ECS_HPOO_TAG", "KAAS_TAG", "KAAS_EXT_TAG", "KAAS_INFRA_TAG"] :
       contains(keys(var.tags), key)
     ])
-    error_message = "tags must include ApplicationId, CostCenter, Environment, Owner, ManagedBy, EsatId, Platform, and DataClassification."
+    error_message = "tags must include all five playbook tag groups."
+  }
+
+  validation {
+    condition = alltrue([
+      for key in ["ECS_CSF_TAG", "ECS_HPOO_TAG", "KAAS_TAG", "KAAS_EXT_TAG", "KAAS_INFRA_TAG"] :
+      length(try(var.tags[key], "")) <= 256 && can(jsondecode(try(var.tags[key], "")))
+    ])
+    error_message = "Each mandatory playbook tag must contain valid JSON no longer than 256 characters."
+  }
+
+  validation {
+    condition = alltrue([
+      for key in ["mo", "esats_id", "namespace", "env", "finops_uuid", "classification", "deploy_type", "tier", "sla"] :
+      contains(keys(try(jsondecode(var.tags["KAAS_TAG"]), {})), key)
+      ]) && alltrue([
+      for key in ["persistence", "storage_type", "ingress", "network_policy"] :
+      contains(keys(try(jsondecode(var.tags["KAAS_INFRA_TAG"]), {})), key)
+    ]) && contains(keys(try(jsondecode(var.tags["KAAS_EXT_TAG"]), {})), "dl")
+    error_message = "KAAS_TAG, KAAS_EXT_TAG, and KAAS_INFRA_TAG must include the playbook-mandatory fields."
+  }
+}
+variable "manage_role_assignments" {
+  description = "Whether this module creates Azure RBAC role assignments required by AKS."
+  type        = bool
+}
+
+variable "managed_identities" {
+  description = "Controls whether this module creates the AKS control-plane and kubelet user-assigned identities or reuses existing identities."
+  type = object({
+    create                    = optional(bool, true)
+    control_plane_identity_id = optional(string)
+    kubelet_identity_id       = optional(string)
+  })
+  default = {}
+
+  validation {
+    condition = try(var.managed_identities.create, true) || (
+      try(trimspace(var.managed_identities.control_plane_identity_id) != "", false) &&
+      try(trimspace(var.managed_identities.kubelet_identity_id) != "", false)
+    )
+    error_message = "When managed_identities.create is false, control_plane_identity_id and kubelet_identity_id must both be supplied."
+  }
+
+  validation {
+    condition = try(var.managed_identities.create, true) || alltrue([
+      for id in [
+        try(var.managed_identities.control_plane_identity_id, ""),
+        try(var.managed_identities.kubelet_identity_id, "")
+      ] : can(regex("(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.ManagedIdentity/userAssignedIdentities/[^/]+$", id))
+    ])
+    error_message = "Existing managed identity IDs must be complete Azure user-assigned identity resource IDs."
   }
 }

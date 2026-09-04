@@ -1,7 +1,12 @@
 mock_provider "azurerm" {}
 
 variables {
-  name = "aks-validation-dev"
+  naming = {
+    platform     = "kaas"
+    maintain_org = "cdp"
+    environment  = "dev"
+    region_code  = "va"
+  }
   resource_group = {
     create   = true
     name     = "rg-validation-dev"
@@ -17,10 +22,12 @@ variables {
     "00000000-0000-0000-0000-000000000001"
   ]
 
-  cluster_profile    = "stateless"
-  compliance_profile = "standard"
-  autoscaling        = { mode = "nap" }
-  disruption_profile = { consolidation = "aggressive", max_unavailable = 2 }
+  cluster_profile         = "stateless"
+  compliance_profile      = "standard"
+  kms_encryption          = { enabled = false }
+  manage_role_assignments = true
+  autoscaling             = { mode = "nap" }
+  disruption_profile      = { consolidation = "aggressive", max_unavailable = 2 }
   private_cluster = {
     enabled                   = true
     private_dns_zone_id       = "System"
@@ -84,14 +91,11 @@ variables {
   diagnostic_log_categories = ["kube-apiserver", "kube-audit"]
 
   tags = {
-    ApplicationId      = "PLATFORM-001"
-    CostCenter         = "LAB-001"
-    Environment        = "dev"
-    ManagedBy          = "Terraform"
-    Owner              = "platform-engineering"
-    EsatId             = "ESAT-TEST"
-    Platform           = "AKS"
-    DataClassification = "internal"
+    ECS_CSF_TAG    = jsonencode({ SIS_RESP_ORG = "ENT-STRATA-KAAS-EIC-AZ", SIS_CONTACT_BEMS_ID = "0000000", SIS_ASSET_OWNER_BEMS_ID = "0000000", SIS_ENVIRONMENT_ID = "DEVELOPMENT", SIS_ASE_ID = "strata-k8s-azure", LAPIC_ADMIN_ACCOUNT = "platform@example.com" })
+    ECS_HPOO_TAG   = jsonencode({ HPOO_CAGASSIGNMENTGROUP = "ENT-STRATA-KAAS-EIC-AZ", HPOO_REQUESTORBEMSID = "0000000", HPOO_SISRESPONSIBLEMANAGER = "0000000", HPOO_SISVENDORSUPPORT = "BOEING" })
+    KAAS_TAG       = jsonencode({ mo = "cdp", esats_id = "3678542", namespace = "cdp-platform", env = "dev", finops_uuid = "REPLACE", classification = "internal", deploy_type = "terraform", tier = "tier-3", sla = "none" })
+    KAAS_EXT_TAG   = jsonencode({ dl = "platform@example.com" })
+    KAAS_INFRA_TAG = jsonencode({ persistence = "stateless", storage_type = "none", ingress = "internal", network_policy = "enabled" })
   }
 }
 
@@ -114,7 +118,7 @@ run "valid_module_contract" {
   }
 
   assert {
-    condition     = azurerm_role_assignment.control_plane_kubelet_identity_operator.role_definition_name == "Managed Identity Operator"
+    condition     = azurerm_role_assignment.control_plane_kubelet_identity_operator[0].role_definition_name == "Managed Identity Operator"
     error_message = "The control-plane identity must be able to assign the custom kubelet identity."
   }
 }
@@ -138,4 +142,90 @@ run "existing_resource_group_contract" {
     condition     = length(data.azurerm_resource_group.existing) == 1
     error_message = "The module must look up the supplied resource group when create is false."
   }
+}
+
+run "valid_production_security_baseline" {
+  command = plan
+
+  variables {
+    naming = {
+      platform     = "kaas"
+      maintain_org = "cdp"
+      environment  = "prod"
+      region_code  = "va"
+    }
+    admin_group_object_ids           = ["00000000-0000-0000-0000-000000000001"]
+    mandatory_admin_group_object_ids = ["00000000-0000-0000-0000-000000000001"]
+    kms_encryption = {
+      enabled                  = true
+      key_vault_key_id         = "https://kv-platform-prod.vault.azure.net/keys/aks-etcd-encryption/00000000000000000000000000000000"
+      key_vault_resource_id    = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-security/providers/Microsoft.KeyVault/vaults/kv-platform-prod"
+      key_vault_network_access = "Private"
+    }
+    integrations = {
+      acr_id                           = null
+      log_analytics_workspace_id       = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-monitor/providers/Microsoft.OperationalInsights/workspaces/law-prod"
+      defender_log_analytics_id        = null
+      audit_archive_storage_account_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-monitor/providers/Microsoft.Storage/storageAccounts/stauditprod"
+    }
+    diagnostic_log_categories = ["kube-apiserver", "kube-audit", "kube-audit-admin"]
+    tags = {
+      ECS_CSF_TAG    = jsonencode({ SIS_RESP_ORG = "ENT-STRATA-KAAS-EIC-AZ", SIS_CONTACT_BEMS_ID = "0000000", SIS_ASSET_OWNER_BEMS_ID = "0000000", SIS_ENVIRONMENT_ID = "PRODUCTION", SIS_ASE_ID = "strata-k8s-azure", LAPIC_ADMIN_ACCOUNT = "platform@example.com" })
+      ECS_HPOO_TAG   = jsonencode({ HPOO_CAGASSIGNMENTGROUP = "ENT-STRATA-KAAS-EIC-AZ", HPOO_REQUESTORBEMSID = "0000000", HPOO_SISRESPONSIBLEMANAGER = "0000000", HPOO_SISVENDORSUPPORT = "BOEING" })
+      KAAS_TAG       = jsonencode({ mo = "cdp", esats_id = "3678542", namespace = "cdp-platform", env = "prod", finops_uuid = "REPLACE", classification = "confidential", deploy_type = "terraform", tier = "tier-1", sla = "99.9" })
+      KAAS_EXT_TAG   = jsonencode({ dl = "platform@example.com" })
+      KAAS_INFRA_TAG = jsonencode({ persistence = "stateless", storage_type = "none", ingress = "internal", network_policy = "enabled" })
+    }
+  }
+
+  assert {
+    condition     = azurerm_kubernetes_cluster.this.private_cluster_enabled
+    error_message = "Production must use a private API endpoint."
+  }
+
+  assert {
+    condition     = azurerm_kubernetes_cluster.this.key_management_service[0].key_vault_network_access == "Private"
+    error_message = "Production KMS must use private Key Vault access."
+  }
+
+  assert {
+    condition     = azurerm_monitor_diagnostic_setting.this[0].storage_account_id != null
+    error_message = "Production audit logs must have an archival destination."
+  }
+}
+
+run "reject_production_public_api" {
+  command = plan
+
+  variables {
+    naming = {
+      platform     = "kaas"
+      maintain_org = "cdp"
+      environment  = "prod"
+      region_code  = "va"
+    }
+    private_cluster = {
+      enabled                   = false
+      private_dns_zone_id       = "System"
+      public_fqdn_enabled       = false
+      api_server_authorized_ips = []
+    }
+  }
+
+  expect_failures = [azurerm_kubernetes_cluster.this]
+}
+
+run "reject_production_missing_security_contract" {
+  command = plan
+
+  variables {
+    naming = {
+      platform     = "kaas"
+      maintain_org = "cdp"
+      environment  = "prod"
+      region_code  = "va"
+    }
+  }
+
+  expect_failures = [azurerm_kubernetes_cluster.this]
 }

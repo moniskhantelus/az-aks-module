@@ -1,5 +1,13 @@
 # Changelog
 
+## 26.08
+
+- Aligned AKS, managed identity, resource-group example, and node-resource-group naming with the KaaS playbook.
+- Replaced legacy flat governance tags with the five mandatory playbook JSON tag groups and added syntax, length, required-field, and cross-contract validation.
+- Updated development and production compositions with KaaS naming and governance values while keeping environment decisions explicit.
+- Added a playbook gap map documenting adopted requirements, deliberate scope boundaries, compatibility decisions, and unresolved playbook inconsistencies.
+- Preserved the lean single-module design, native Terraform tests, CAPI-ready boundary, and external Fleet/Backup/GitOps ownership.
+
 ## 3.0.0
 
 - Kept tfvars examples values-only and placed the complete option catalog, constraints, and operating instructions in `examples/README.md` and in both environment folders for self-contained use.
@@ -53,3 +61,10 @@
 - Prevented Terraform-managed user pools in NAP mode.
 - Added NAP outputs, validations, documentation, and GitOps examples.
 - Retained Manual mode for exception profiles.
+# Story 1
+
+- Enforced a fail-closed production security baseline for private API access, Azure RBAC, disabled local accounts, and mandatory Entra administrator groups.
+- Added AKS KMS-backed etcd encryption using an existing Key Vault key with private network access in production.
+- Required production Log Analytics audit routing, archival storage handoff, and the `kube-audit` and `kube-audit-admin` categories.
+- Added production security readiness output, tests, examples, and external ownership documentation.
+- Recorded SSH disabling as an external readiness item because AzureRM 4.81.0 does not expose the AKS preview setting.

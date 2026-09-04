@@ -41,20 +41,20 @@ output "oidc_issuer_url" {
 }
 
 output "control_plane_identity" {
-  description = "Control-plane managed identity details."
+  description = "Effective control-plane managed identity details."
   value = {
-    id           = azurerm_user_assigned_identity.control_plane.id
-    client_id    = azurerm_user_assigned_identity.control_plane.client_id
-    principal_id = azurerm_user_assigned_identity.control_plane.principal_id
+    id           = local.control_plane_identity_id
+    client_id    = local.control_plane_identity_client_id
+    principal_id = local.control_plane_identity_principal_id
   }
 }
 
 output "kubelet_identity" {
-  description = "Kubelet managed identity details."
+  description = "Effective kubelet managed identity details."
   value = {
-    id           = azurerm_user_assigned_identity.kubelet.id
-    client_id    = azurerm_user_assigned_identity.kubelet.client_id
-    principal_id = azurerm_user_assigned_identity.kubelet.principal_id
+    id           = local.kubelet_identity_id
+    client_id    = local.kubelet_identity_client_id
+    principal_id = local.kubelet_identity_principal_id
   }
 }
 
@@ -86,7 +86,7 @@ output "key_vault_secrets_provider_identity" {
 
 output "connect_command" {
   description = "Azure CLI command for retrieving credentials."
-  value       = "az aks get-credentials --resource-group ${local.resource_group_name} --name ${var.name} --overwrite-existing"
+  value       = "az aks get-credentials --resource-group ${local.resource_group_name} --name ${local.cluster_name} --overwrite-existing"
 }
 
 output "node_provisioning" {
@@ -128,10 +128,10 @@ output "backup_integration" {
     cluster_name                = azurerm_kubernetes_cluster.this.name
     resource_group_name         = azurerm_kubernetes_cluster.this.resource_group_name
     node_resource_group         = azurerm_kubernetes_cluster.this.node_resource_group
-    control_plane_identity_id   = azurerm_user_assigned_identity.control_plane.id
-    control_plane_principal_id  = azurerm_user_assigned_identity.control_plane.principal_id
-    kubelet_identity_id         = azurerm_user_assigned_identity.kubelet.id
-    kubelet_principal_id        = azurerm_user_assigned_identity.kubelet.principal_id
+    control_plane_identity_id   = local.control_plane_identity_id
+    control_plane_principal_id  = local.control_plane_identity_principal_id
+    kubelet_identity_id         = local.kubelet_identity_id
+    kubelet_principal_id        = local.kubelet_identity_principal_id
     blob_driver_enabled         = var.storage_profile.blob_driver_enabled
     disk_driver_enabled         = var.storage_profile.disk_driver_enabled
     file_driver_enabled         = var.storage_profile.file_driver_enabled
@@ -156,5 +156,23 @@ output "platform_security_contract" {
     psa_enforce_level           = var.platform_security.psa_enforce_level
     default_deny_network_policy = var.platform_security.default_deny_network_policy
     network_policy_engine       = "cilium"
+  }
+}
+
+output "production_security_readiness" {
+  description = "Effective Story 1 production security controls and externally owned readiness items."
+  value = {
+    production                            = local.is_production
+    private_api                           = var.private_cluster.enabled && !var.private_cluster.public_fqdn_enabled
+    azure_rbac                            = var.azure_rbac_enabled
+    local_accounts_disabled               = var.local_account_disabled
+    mandatory_admin_groups_retained       = length(var.mandatory_admin_group_object_ids) > 0 && length(setsubtract(var.mandatory_admin_group_object_ids, toset(var.admin_group_object_ids))) == 0
+    kms_etcd_encryption                   = var.kms_encryption.enabled
+    kms_private_key_vault_access          = var.kms_encryption.key_vault_network_access == "Private"
+    audit_workspace_configured            = local.log_analytics_workspace_id != null
+    audit_archive_configured              = local.audit_archive_storage_id != null
+    mandatory_audit_categories_configured = length(setsubtract(local.required_production_audit_categories, var.diagnostic_log_categories)) == 0
+    ssh_disable_supported_by_provider     = false
+    ssh_disable_ownership                 = "External until the approved AzureRM provider exposes AKS securityProfile.sshAccess in Azure Government."
   }
 }

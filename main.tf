@@ -1,9 +1,9 @@
 resource "azurerm_kubernetes_cluster" "this" {
-  name                = var.name
+  name                = local.cluster_name
   location            = local.location
   resource_group_name = local.resource_group_name
 
-  dns_prefix          = substr(var.name, 0, 54)
+  dns_prefix          = substr(local.cluster_name, 0, 54)
   kubernetes_version  = var.kubernetes_version
   sku_tier            = var.sku_tier
   support_plan        = var.support_plan
@@ -33,17 +33,23 @@ resource "azurerm_kubernetes_cluster" "this" {
 
   identity {
     type         = "UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.control_plane.id]
+    identity_ids = [local.control_plane_identity_id]
   }
 
   kubelet_identity {
-    client_id                 = azurerm_user_assigned_identity.kubelet.client_id
-    object_id                 = azurerm_user_assigned_identity.kubelet.principal_id
-    user_assigned_identity_id = azurerm_user_assigned_identity.kubelet.id
+    client_id                 = local.kubelet_identity_client_id
+    object_id                 = local.kubelet_identity_principal_id
+    user_assigned_identity_id = local.kubelet_identity_id
   }
 
   api_server_access_profile {
     authorized_ip_ranges = var.private_cluster.enabled ? null : var.private_cluster.api_server_authorized_ips
+
+    virtual_network_integration_enabled = var.private_cluster.api_server_vnet_integration_enabled
+
+    subnet_id = var.private_cluster.api_server_vnet_integration_enabled ? (
+      var.private_cluster.api_server_subnet_id
+    ) : null
   }
 
   default_node_pool {
@@ -112,7 +118,6 @@ resource "azurerm_kubernetes_cluster" "this" {
     dns_service_ip    = var.network.dns_service_ip
     outbound_type     = var.network.outbound_type
     load_balancer_sku = var.network.load_balancer_sku
-    network_mode      = var.network.network_mode
   }
 
   storage_profile {
@@ -133,6 +138,15 @@ resource "azurerm_kubernetes_cluster" "this" {
     content {
       secret_rotation_enabled  = var.addons.key_vault_secret_rotation
       secret_rotation_interval = var.addons.key_vault_rotation_interval
+    }
+  }
+
+  dynamic "key_management_service" {
+    for_each = var.kms_encryption.enabled ? [var.kms_encryption] : []
+
+    content {
+      key_vault_key_id         = key_management_service.value.key_vault_key_id
+      key_vault_network_access = key_management_service.value.key_vault_network_access
     }
   }
 
@@ -191,13 +205,90 @@ resource "azurerm_kubernetes_cluster" "this" {
 
   depends_on = [
     azurerm_role_assignment.control_plane_network,
-    azurerm_role_assignment.control_plane_kubelet_identity_operator
+    azurerm_role_assignment.control_plane_kubelet_identity_operator,
+    azurerm_role_assignment.control_plane_api_server_network,
+    azurerm_role_assignment.control_plane_key_vault_contributor,
+    azurerm_role_assignment.control_plane_key_vault_crypto_user
   ]
 
   lifecycle {
     precondition {
+      condition = (
+        try(jsondecode(var.tags["KAAS_TAG"]).mo, "") == var.naming.maintain_org &&
+        try(jsondecode(var.tags["KAAS_TAG"]).env, "") == var.naming.environment &&
+        try(jsondecode(var.tags["KAAS_INFRA_TAG"]).persistence, "") == var.cluster_profile
+      )
+      error_message = "KaaS tag identity/environment/persistence must match naming and cluster_profile inputs."
+    }
+    precondition {
       condition     = !var.local_account_disabled || length(var.admin_group_object_ids) > 0
       error_message = "Disabling local accounts requires at least one Entra administrator group."
+    }
+
+    precondition {
+      condition     = !local.is_production || var.private_cluster.enabled
+      error_message = "Production clusters require a private API endpoint."
+    }
+
+    precondition {
+      condition     = !local.is_production || !var.private_cluster.public_fqdn_enabled
+      error_message = "Production private clusters must not expose a public FQDN."
+    }
+
+    precondition {
+      condition     = !local.is_production || length(var.private_cluster.api_server_authorized_ips) == 0
+      error_message = "Production private clusters must not configure public API authorized IP ranges."
+    }
+
+    precondition {
+      condition     = !local.is_production || var.azure_rbac_enabled
+      error_message = "Production clusters require Azure RBAC for Kubernetes authorization."
+    }
+
+    precondition {
+      condition     = !local.is_production || var.local_account_disabled
+      error_message = "Production clusters must disable AKS local administrator accounts."
+    }
+
+    precondition {
+      condition     = !local.is_production || length(var.mandatory_admin_group_object_ids) > 0
+      error_message = "Production clusters require at least one mandatory platform administrator group."
+    }
+
+    precondition {
+      condition = !local.is_production || length(setsubtract(
+        var.mandatory_admin_group_object_ids,
+        toset(var.admin_group_object_ids)
+      )) == 0
+      error_message = "admin_group_object_ids must retain every mandatory platform administrator group."
+    }
+
+    precondition {
+      condition     = !local.is_production || var.kms_encryption.enabled
+      error_message = "Production clusters require KMS-backed etcd encryption."
+    }
+
+    precondition {
+      condition     = !local.is_production || var.kms_encryption.key_vault_network_access == "Private"
+      error_message = "Production KMS encryption requires private Key Vault network access."
+    }
+
+    precondition {
+      condition     = !local.is_production || try(trimspace(var.integrations.log_analytics_workspace_id), "") != ""
+      error_message = "Production clusters require an approved Log Analytics workspace."
+    }
+
+    precondition {
+      condition     = !local.is_production || try(trimspace(var.integrations.audit_archive_storage_account_id), "") != ""
+      error_message = "Production clusters require an audit archival storage destination."
+    }
+
+    precondition {
+      condition = !local.is_production || length(setsubtract(
+        local.required_production_audit_categories,
+        var.diagnostic_log_categories
+      )) == 0
+      error_message = "Production diagnostics must include kube-audit and kube-audit-admin."
     }
 
     precondition {

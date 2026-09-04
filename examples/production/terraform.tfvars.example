@@ -7,15 +7,20 @@ tenant_id       = "00000000-0000-0000-0000-000000000000"
 # ==============================================================================
 # General
 # ==============================================================================
-cluster_name       = "aks-flight-prod"
+naming = {
+  platform     = "kaas"
+  maintain_org = "cdp"
+  environment  = "prod"
+  region_code  = "va"
+}
 kubernetes_version = "1.34"
 cluster_profile    = "stateful"
 compliance_profile = "fips"
 resource_group = {
   create = false
-  name   = "rg-flight-prod"
+  name   = "kaas-cdp-prod-va-rg"
 }
-
+manage_role_assignments = false
 # ==============================================================================
 # Cluster Configuration - hardened NAP baseline
 # ==============================================================================
@@ -40,6 +45,7 @@ maintenance = {
 # Identity
 # ==============================================================================
 admin_group_object_ids = ["00000000-0000-0000-0000-000000000000"]
+mandatory_admin_group_object_ids = ["00000000-0000-0000-0000-000000000000"]
 azure_rbac_enabled     = true
 local_account_disabled = true
 
@@ -60,6 +66,11 @@ private_cluster = {
   private_dns_zone_id       = "/subscriptions/.../resourceGroups/.../providers/Microsoft.Network/privateDnsZones/privatelink.eastus2.azmk8s.io"
   public_fqdn_enabled       = false
   api_server_authorized_ips = []
+}
+kms_encryption = {
+  enabled                  = true
+  key_vault_key_id         = "https://kv-platform-prod.vault.azure.net/keys/aks-etcd-encryption/REPLACE-WITH-KEY-VERSION"
+  key_vault_network_access = "Private"
 }
 
 # ==============================================================================
@@ -143,9 +154,10 @@ storage_profile = {
 # ACR, Log Analytics, Defender and diagnostics (existing resource IDs)
 # ==============================================================================
 integrations = {
-  acr_id                     = "/subscriptions/.../resourceGroups/.../providers/Microsoft.ContainerRegistry/registries/acrplatformprod"
-  log_analytics_workspace_id = "/subscriptions/.../resourceGroups/.../providers/Microsoft.OperationalInsights/workspaces/law-platform-prod"
-  defender_log_analytics_id  = null
+  acr_id                           = "/subscriptions/.../resourceGroups/.../providers/Microsoft.ContainerRegistry/registries/acrplatformprod"
+  log_analytics_workspace_id       = "/subscriptions/.../resourceGroups/.../providers/Microsoft.OperationalInsights/workspaces/law-platform-prod"
+  defender_log_analytics_id        = null
+  audit_archive_storage_account_id = "/subscriptions/.../resourceGroups/.../providers/Microsoft.Storage/storageAccounts/stauditarchiveprod"
 }
 backup_integration = { enabled = true }
 pki_integration = {
@@ -159,13 +171,9 @@ diagnostic_log_categories = ["kube-apiserver", "kube-audit", "kube-audit-admin",
 # Governance / ESAT tags
 # ==============================================================================
 tags = {
-
-  ApplicationId      = "PLATFORM-001"
-  CostCenter         = "CC-1001"
-  Environment        = "prod"
-  Owner              = "platform-engineering"
-  ManagedBy          = "Terraform"
-  EsatId             = "ESAT-REPLACE-ME"
-  Platform           = "AKS"
-  DataClassification = "confidential"
+  ECS_CSF_TAG    = "{\"SIS_RESP_ORG\":\"ENT-STRATA-KAAS-EIC-AZ\",\"SIS_CONTACT_BEMS_ID\":\"REPLACE\",\"SIS_ASSET_OWNER_BEMS_ID\":\"REPLACE\",\"SIS_ENVIRONMENT_ID\":\"PRODUCTION\",\"SIS_ASE_ID\":\"strata-k8s-azure\",\"LAPIC_ADMIN_ACCOUNT\":\"replace@boeing.com\"}"
+  ECS_HPOO_TAG   = "{\"HPOO_CAGASSIGNMENTGROUP\":\"ENT-STRATA-KAAS-EIC-AZ\",\"HPOO_REQUESTORBEMSID\":\"REPLACE\",\"HPOO_SISRESPONSIBLEMANAGER\":\"REPLACE\",\"HPOO_SISVENDORSUPPORT\":\"BOEING\"}"
+  KAAS_TAG       = "{\"mo\":\"cdp\",\"esats_id\":\"3678542\",\"namespace\":\"cdp-platform\",\"env\":\"prod\",\"finops_uuid\":\"REPLACE\",\"classification\":\"confidential\",\"deploy_type\":\"terraform\",\"tier\":\"tier-1\",\"sla\":\"99.9\"}"
+  KAAS_EXT_TAG   = "{\"dl\":\"replace@boeing.com\",\"dr_enabled\":\"true\",\"backup_policy\":\"daily\",\"data_residency\":\"us-gov\",\"response_sla\":\"1h\"}"
+  KAAS_INFRA_TAG = "{\"persistence\":\"stateful\",\"storage_type\":\"disk\",\"ingress\":\"internal\",\"network_policy\":\"enabled\",\"scaling\":\"hpa\",\"secrets_provider\":\"csi-kv\",\"mesh_enabled\":\"false\"}"
 }

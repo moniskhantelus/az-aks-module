@@ -1,8 +1,9 @@
 module "aks" {
   source = "../.."
 
-  name                      = var.cluster_name
+  naming                    = var.naming
   resource_group            = var.resource_group
+  managed_identities        = var.managed_identities
   tenant_id                 = var.tenant_id
   node_subnet_id            = var.node_subnet_id
   kubernetes_version        = var.kubernetes_version
@@ -16,6 +17,7 @@ module "aks" {
   platform_security         = var.platform_security
   autoscaling               = var.autoscaling
   disruption_profile        = var.disruption_profile
+  kms_encryption            = var.kms_encryption
   private_cluster           = var.private_cluster
   network                   = var.network
   system_node_pool          = var.system_node_pool
@@ -31,6 +33,7 @@ module "aks" {
   pki_integration           = var.pki_integration
   diagnostic_log_categories = var.diagnostic_log_categories
   tags                      = var.tags
+  manage_role_assignments   = var.manage_role_assignments
 }
 
 output "aks" {

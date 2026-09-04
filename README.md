@@ -2,6 +2,23 @@
 
 One lean AKS module with two policy-driven workload profiles. Root `.tf` files are one module; filenames only separate concerns.
 
+This release incorporates the applicable KaaS playbook 26.06 naming, tagging, environment-composition, least-privilege, documentation, and lifecycle requirements. See [the playbook gap map](docs/playbook-gap-map.md) for adopted, deferred, and out-of-scope items.
+
+## KaaS naming and governance
+
+Cluster and identity names are derived from validated segments rather than accepted as arbitrary names:
+
+```hcl
+naming = {
+  platform     = "kaas"
+  maintain_org = "cdp"
+  environment  = "dev"
+  region_code  = "va"
+}
+```
+
+This produces `kaas-cdp-dev-va-aks`, `kaas-cdp-dev-controlplane-va-mi`, and `kaas-cdp-dev-kubelet-va-mi`. The five playbook tag groups are mandatory compact JSON strings. The module checks JSON syntax, Azure's 256-character value limit, mandatory KaaS fields, and alignment of `mo`, `env`, and `persistence` with the module inputs.
+
 ## Required environment composition
 
 Environment-specific values have no hidden defaults. Callers explicitly provide VM sizes, counts, disks, CIDRs, egress, maintenance, add-ons, integrations, diagnostics, storage, governance, autoscaling, disruption, PKI, and backup handoffs. The development and production tfvars examples are complete compositions.
@@ -83,6 +100,7 @@ FIPS requires the FIPS security contract plus FIPS and host encryption on every 
 | Admission engine | Neutral; installs neither Kyverno nor Gatekeeper | Avoids policy-engine conflict |
 | Autoscaling / blast radius | `manual` or `nap`; GitOps disruption handoff | NAP and scaling-boundary gaps |
 | Fleet/cloud-agnostic facade/CAPI | Explicitly out of this Azure provider module | Future architecture work, not falsely claimed |
+| KaaS playbook naming/tags | Derived KaaS resource names and five validated JSON governance tags | Playbook 26.06 naming and tagging standards |
 
 ## Validation
 
@@ -94,3 +112,10 @@ terraform test
 ```
 
 Provider-backed plans for both examples are required before release.
+# Story 1 production security baseline
+
+Production (`naming.environment = "prod"`) is fail-closed. A production plan requires a private API without a public FQDN, Azure RBAC, disabled local accounts, retention of every platform-mandated Entra administrator group, KMS-backed etcd encryption through a private Key Vault path, Log Analytics audit routing, archival storage routing, and both `kube-audit` and `kube-audit-admin` categories.
+
+The module consumes existing Key Vault keys, Log Analytics workspaces, archival storage accounts, private DNS, and Entra groups. Their lifecycle, permissions, retention, SIEM forwarding, Conditional Access, PIM, and approvals remain owned by the corresponding enterprise platform teams.
+
+AzureRM 4.81.0 does not expose AKS `securityProfile.sshAccess`. The `production_security_readiness` output records that SSH disabling remains an external readiness item until an approved Azure Government provider/API path is available. Do not interpret omission of an SSH key as disabling the SSH service.

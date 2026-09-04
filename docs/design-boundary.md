@@ -1,5 +1,12 @@
 # Design boundary
 
+## Story 1 security ownership
+
+The module enforces the AKS-side production controls: private API, Azure RBAC, disabled local accounts, mandatory administrator-group retention, KMS configuration, and diagnostic routing. Key Vault/key lifecycle and RBAC, private DNS, Log Analytics and SIEM operations, archive retention, Conditional Access, PIM, and operational approval remain externally owned.
+
+SSH service disabling is an AKS preview capability not represented by the locked AzureRM 4.81.0 schema. It remains an explicit external readiness item and must be verified after deployment if approved for Azure Government.
+
+
 ## Owned by this module
 
 - Optional AKS resource group, AKS cluster, fixed system pool, and manual-mode user pools
