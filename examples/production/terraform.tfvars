@@ -1,0 +1,244 @@
+# ==============================================================================
+# Provider / Subscription
+# ==============================================================================
+subscription_id = "c82d5dd9-5800-4651-9179-d1131cc167aa"
+tenant_id       = "8e213d3d-4fb3-4a73-87fb-57e1b70862f2"
+//location        = "eastus2"
+# ==============================================================================
+# General
+# ==============================================================================
+naming = {
+  platform     = "kaas"
+  maintain_org = "cdp"
+  environment  = "dev"
+  region_code  = "va"
+}
+kubernetes_version = "1.34"
+cluster_profile    = "stateful"
+compliance_profile = "fips"
+backup_integration = { enabled = true }
+resource_group = {
+  create   = false
+  name     = "kaas-cdp-dev-va-rg"
+  location = "eastus2"
+}
+manage_role_assignments = true
+
+# Omit this block (or leave create = true) to preserve the original behavior and
+# let the module create both identities. To reuse existing identities, set
+# create = false and provide both complete Azure resource IDs.
+managed_identities = {
+  create                    = false
+  control_plane_identity_id = "/subscriptions/c82d5dd9-5800-4651-9179-d1131cc167aa/resourcegroups/kaas-cdp-dev-va-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-aks-platform-dev-control-plane"
+  kubelet_identity_id       = "/subscriptions/c82d5dd9-5800-4651-9179-d1131cc167aa/resourcegroups/kaas-cdp-dev-va-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-aks-platform-dev-kubelet"
+}
+
+# ==============================================================================
+# Cluster Configuration - hardened NAP baseline
+# ==============================================================================
+sku_tier                  = "Standard"
+support_plan              = "KubernetesOfficial"
+automatic_upgrade_channel = "patch"
+node_os_upgrade_channel   = "NodeImage"
+autoscaling = {
+  mode = "nap"
+}
+disruption_profile = {
+  consolidation   = "conservative"
+  max_unavailable = 1
+}
+maintenance = {
+
+  auto_upgrade = { frequency = "Weekly", interval = 1, duration = 4, day_of_week = "Sunday", start_time = "02:00", utc_offset = "+00:00" }
+  node_os      = { frequency = "Weekly", interval = 1, duration = 4, day_of_week = "Sunday", start_time = "06:00", utc_offset = "+00:00" }
+}
+
+# ==============================================================================
+# Identity
+# ==============================================================================
+admin_group_object_ids           = ["1ea7f6dc-a3fa-4e40-99e2-e9711788b0f3"]
+mandatory_admin_group_object_ids = ["1ea7f6dc-a3fa-4e40-99e2-e9711788b0f3"]
+azure_rbac_enabled               = true
+local_account_disabled           = true
+
+# ==============================================================================
+# Networking - existing subnet; Azure CNI Overlay + Cilium are module-enforced
+# ==============================================================================
+node_subnet_id = "/subscriptions/c82d5dd9-5800-4651-9179-d1131cc167aa/resourceGroups/rg-platform-dev/providers/Microsoft.Network/virtualNetworks/vnet-platform-dev/subnets/snet-aks"
+network = {
+  pod_cidr          = "10.244.0.0/16"
+  service_cidr      = "10.0.0.0/20"
+  dns_service_ip    = "10.0.0.10"
+  outbound_type     = "loadBalancer"
+  load_balancer_sku = "standard"
+  network_mode      = null
+}
+private_cluster = {
+  enabled                             = true
+  private_dns_zone_id                 = "System"
+  public_fqdn_enabled                 = false
+  api_server_authorized_ips           = []
+  api_server_vnet_integration_enabled = true
+  api_server_subnet_id                = "/subscriptions/c82d5dd9-5800-4651-9179-d1131cc167aa/resourceGroups/rg-platform-dev/providers/Microsoft.Network/virtualNetworks/vnet-platform-dev/subnets/snet-aks-apiserver"
+}
+
+kms_encryption = {
+  enabled                  = true
+  key_vault_resource_id    = "/subscriptions/c82d5dd9-5800-4651-9179-d1131cc167aa/resourceGroups/kaas-cdp-dev-va-rg/providers/Microsoft.KeyVault/vaults/cdp-00002-dev-kv"
+  key_vault_key_id         = "https://cdp-00002-dev-kv.vault.azure.net/keys/aks-etcd-encryption/0cce9028020243e4b4303867d555a377"
+  key_vault_network_access = "Private"
+}
+# ==============================================================================
+# Security and fixed system pool
+# ==============================================================================
+platform_security = {
+  fips_required               = true
+  psa_enforce_level           = "restricted"
+  default_deny_network_policy = true
+}
+system_node_pool = {
+  architecture            = "arm64"
+  vm_size                 = "Standard_D4pds_v6"
+  min_count               = 2
+  max_count               = 2
+  node_count              = 2
+  zones                   = ["1", "3"]
+  os_sku                  = "AzureLinux"
+  os_disk_type            = "Ephemeral"
+  os_disk_size_gb         = 128
+  max_pods                = 110
+  max_surge               = "33%"
+  only_critical_addons    = true
+  node_labels             = { "platform.boeing.com/workload-class" = "platform" }
+  host_encryption_enabled = true
+  fips_enabled            = true
+  temporary_rotation_name = "systemtmp"
+}
+
+user_node_pools = {}
+
+auto_scaler_profile = {
+
+  balance_similar_node_groups      = true
+  expander                         = "least-waste"
+  max_graceful_termination_sec     = 600
+  max_node_provisioning_time       = "15m"
+  max_unready_nodes                = 3
+  max_unready_percentage           = 45
+  new_pod_scale_up_delay           = "0s"
+  scale_down_delay_after_add       = "10m"
+  scale_down_delay_after_delete    = "10s"
+  scale_down_delay_after_failure   = "3m"
+  scan_interval                    = "10s"
+  scale_down_unneeded              = "10m"
+  scale_down_unready               = "20m"
+  scale_down_utilization_threshold = 0.5
+  empty_bulk_delete_max            = 10
+  skip_nodes_with_local_storage    = true
+  skip_nodes_with_system_pods      = true
+}
+
+# ==============================================================================
+# AKS add-ons and storage
+# ==============================================================================
+addons = {
+  azure_policy_enabled            = true
+  key_vault_csi_enabled           = true
+  key_vault_secret_rotation       = true
+  key_vault_rotation_interval     = "2m"
+  managed_prometheus_enabled      = true
+  container_insights_enabled      = true
+  keda_enabled                    = true
+  vertical_pod_autoscaler_enabled = true
+  image_cleaner_enabled           = true
+  image_cleaner_interval_hours    = 48
+  istio_enabled                   = true
+  istio_revisions                 = ["asm-1-29"]
+  istio_internal_gateway_enabled  = true
+  istio_external_gateway_enabled  = false
+  defender_enabled                = true
+}
+storage_profile = {
+  blob_driver_enabled         = true
+  disk_driver_enabled         = true
+  file_driver_enabled         = true
+  snapshot_controller_enabled = true
+}
+
+# ==============================================================================
+# ACR, Log Analytics, Defender and diagnostics (existing resource IDs)
+# ==============================================================================
+integrations = {
+  acr_id                           = "/subscriptions/c82d5dd9-5800-4651-9179-d1131cc167aa/resourcegroups/kaas-cdp-dev-va-rg/providers/Microsoft.ContainerRegistry/registries/kaascdp00001devvaacr"
+  log_analytics_workspace_id       = "/subscriptions/c82d5dd9-5800-4651-9179-d1131cc167aa/resourceGroups/defaultresourcegroup-eus/providers/Microsoft.OperationalInsights/workspaces/defaultworkspace-c82d5dd9-5800-4651-9179-d1131cc167aa-eus"
+  defender_log_analytics_id        = "/subscriptions/c82d5dd9-5800-4651-9179-d1131cc167aa/resourceGroups/defaultresourcegroup-eus/providers/Microsoft.OperationalInsights/workspaces/defaultworkspace-c82d5dd9-5800-4651-9179-d1131cc167aa-eus"
+  audit_archive_storage_account_id = "/subscriptions/c82d5dd9-5800-4651-9179-d1131cc167aa/resourceGroups/kaas-cdp-dev-va-rg/providers/Microsoft.Storage/storageAccounts/stauditcdpdev001"
+}
+
+pki_integration = {
+  enabled                     = false
+  trusted_ca_bundle_secret_id = ""
+  issuer_url                  = ""
+}
+diagnostic_log_categories = ["kube-apiserver", "kube-audit", "kube-audit-admin", "kube-controller-manager", "kube-scheduler", "cluster-autoscaler", "guard", "cloud-controller-manager", "csi-azuredisk-controller", "csi-azurefile-controller", "csi-snapshot-controller"]
+
+# ==============================================================================
+# Governance / ESAT tags
+# ==============================================================================
+tags = {
+  ECS_CSF_TAG = <<-JSON
+    {
+      "SIS_RESP_ORG": "PERSONAL",
+      "SIS_CONTACT_BEMS_ID": "N/A",
+      "SIS_ASSET_OWNER_BEMS_ID": "N/A",
+      "SIS_ENVIRONMENT_ID": "DEVELOPMENT",
+      "SIS_ASE_ID": "personal-aks",
+      "LAPIC_ADMIN_ACCOUNT": "your-address@example.com"
+    }
+  JSON
+
+  ECS_HPOO_TAG = <<-JSON
+    {
+      "HPOO_CAGASSIGNMENTGROUP": "PERSONAL",
+      "HPOO_REQUESTORBEMSID": "N/A",
+      "HPOO_SISRESPONSIBLEMANAGER": "N/A",
+      "HPOO_SISVENDORSUPPORT": "SELF"
+    }
+  JSON
+
+  KAAS_TAG = <<-JSON
+    {
+      "mo": "cdp",
+      "esats_id": "00001",
+      "namespace": "personal-platform",
+      "env": "dev",
+      "finops_uuid": "personal",
+      "classification": "internal",
+      "deploy_type": "terraform",
+      "tier": "test",
+      "sla": "none"
+    }
+  JSON
+
+  KAAS_EXT_TAG = <<-JSON
+    {
+      "dl": "your-address@example.com",
+      "dr_enabled": "false",
+      "backup_policy": "none",
+      "data_residency": "personal",
+      "response_sla": "none"
+    }
+  JSON
+
+  KAAS_INFRA_TAG = <<-JSON
+    {
+      "persistence": "stateful",
+      "storage_type": "disk",
+      "ingress": "internal",
+      "network_policy": "enabled",
+      "scaling": "nap",
+      "secrets_provider": "csi-kv",
+      "mesh_enabled": "true"
+    }
+  JSON
+}

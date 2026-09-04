@@ -3,5 +3,11 @@
 *.tfstate.*
 *.tfplan
 terraform.tfvars
+!examples/development/terraform.tfvars
+!examples/production/terraform.tfvars
+**/*backup*
+**/tfplan
+**/old-terraform-artifacts/
+__MACOSX/
 crash.log
 .DS_Store
