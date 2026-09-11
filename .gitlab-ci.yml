@@ -1,0 +1,62 @@
+stages:
+  - validate
+  - lint
+  - security
+  - test
+  - release
+
+variables:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+terraform_fmt_validate:
+  stage: validate
+  image: hashicorp/terraform:1.14.3
+  script:
+    - terraform fmt -check -recursive
+    - terraform init -backend=false
+    - terraform validate
+
+terraform_lint:
+  stage: lint
+  image: ghcr.io/terraform-linters/tflint:v0.59.1
+  script:
+    - tflint --init
+    - tflint --recursive
+
+terraform_docs_check:
+  stage: lint
+  image: quay.io/terraform-docs/terraform-docs:0.20.0
+  script:
+    - terraform-docs markdown table . > /tmp/terraform-module-reference.md
+    - test -s /tmp/terraform-module-reference.md
+  allow_failure: false
+
+terraform_security:
+  stage: security
+  image: aquasec/trivy:0.66.0
+  script:
+    - trivy config --exit-code 1 --severity HIGH,CRITICAL .
+
+terraform_tests:
+  stage: test
+  image: hashicorp/terraform:1.14.3
+  script:
+    - terraform init -backend=false
+    - terraform test
+
+release_evidence:
+  stage: release
+  image: alpine:3.22
+  rules:
+    - if: '$CI_COMMIT_TAG'
+  script:
+    - test -f CHANGELOG.md
+    - test -f VERSION
+    - test -f LICENSE
+    - test -f docs/END_TO_END_ARCHITECTURE.md
+    - test -f docs/END_TO_END_CODE_WALKTHROUGH.md
+    - test -f docs/STORY_IMPLEMENTATION_MATRIX.md
+    - grep -q '^## ' CHANGELOG.md
+    - test "${CI_COMMIT_TAG}" = "v$(cat VERSION)"
+    - echo "Release artifacts and changelog are present for ${CI_COMMIT_TAG}."
